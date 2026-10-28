@@ -1,0 +1,49 @@
+pipeline:
+  stages:
+    - steps:
+        - run:
+            script: npm install
+            container:
+              image: node:24-alpine
+              connector: project_level_dockerhub_connector
+          name: Install dependencies
+          id: Install_dependencies
+        - name: test
+          run:
+            script: CI=true npm test -- --coverage
+            container:
+              image: node:24-alpine
+              connector: project_level_dockerhub_connector
+          id: test
+        - name: sonar scan
+          run:
+            script: |
+              npm install -g @sonar/scan
+              sonar-scanner-npm \
+              -Dsonar.host.url=$SONAR_URL \
+              -Dsonar.token=$SONAR_TOKEN \
+              -Dsonar.projectKey=victoria-vat-calc
+            env:
+              SONAR_URL: <+secrets.getValue("sonarqube_url")>
+              SONAR_TOKEN: <+secrets.getValue("sonarqube_token")>
+            container:
+              image: node:24-alpine
+              connector: project_level_dockerhub_connector
+              resources:
+                limits:
+                  cpu: 400m
+                  memory: 2Gi
+          id: sonar_scan
+      name: validate
+      id: validate
+      runtime:
+        kubernetes:
+          namespace: harness-delegate-ng
+          connector: cohort46_build_farm_connector
+  clone:
+    ref:
+      type: branch
+      name: main
+    enabled: true
+    repo: cohort46/vat-calculator
+    connector: project_level_github_connector
