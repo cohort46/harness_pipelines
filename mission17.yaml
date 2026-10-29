@@ -1,0 +1,71 @@
+pipeline:
+  stages:
+    - steps:
+        - run:
+            script: npm install
+            container:
+              image: node:24-alpine
+              connector: project_level_dockerhub_connector
+          name: Install dependencies
+          id: Install_dependencies
+        - name: test
+          run:
+            script: CI=true npm test -- --coverage
+            container:
+              image: node:24-alpine
+              connector: project_level_dockerhub_connector
+          id: test
+        - name: sonar scan
+          run:
+            script: |-
+              npm install -g @sonar/scan
+              sonar-scanner-npm \
+              -Dsonar.host.url=$SONAR_URL \
+              -Dsonar.token=$SONAR_TOKEN \
+              -Dsonar.projectKey=<YOUR_NAME>-vat-calc
+            env:
+              SONAR_URL: <+secrets.getValue("sonarqube_url")>
+              SONAR_TOKEN: <+secrets.getValue("sonarqube_token")>
+            container:
+              image: node:24-alpine
+              connector: project_level_dockerhub_connector
+              resources:
+                limits:
+                  cpu: 400m
+                  memory: 2Gi
+          id: sonar_scan
+      name: validate
+      id: validate
+      runtime:
+        kubernetes:
+          namespace: harness-delegate-ng
+          connector: <YOUR_NAME>_build_farm_connector
+    - id: Build_and_Push_docker_image
+      name: Build and Push docker image
+      clone:
+        enabled: true
+      steps:
+        - name: push to dockerhub
+          id: push_to_dockerhub
+          build:
+            uses: buildAndPushToDocker
+            with:
+              connector: project_level_dockerhub_connector
+              repo: <YOUR_NAME>/vat
+              tags:
+                - latest
+                - <+pipeline.sequenceId>
+              caching: false
+              build_mode: build_and_push
+              plugin_k8s: buildx
+      runtime:
+        kubernetes:
+          namespace: harness-delegate-ng
+          connector: <YOUR_NAME>_build_farm_connector
+  clone:
+    ref:
+      type: branch
+      name: main
+    enabled: true
+    repo: <YOUR_NAME>/vat-calculator-docker
+    connector: project_level_github_connector
